@@ -1,64 +1,76 @@
-
+/**
+ * HSHO mock API (always success)
+ * Paths: /live/* -> { error:0, success:true, ... }
+ */
 const express = require('express');
+const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
+const morgan = require('morgan');
 
 const app = express();
-app.use(express.json());
+const PORT = process.env.PORT || 10000;
 
-function ok(data){ return {success:true,status:"success",code:0,data}; }
-function okList(list){ return ok({list}); }
+// CORS + JSON
+app.use(cors());
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-// fake player data
-const player = { 
-  playerId: "RENDER_PLAYER_001",
-  username: "RenderUser",
-  displayName: "Render Player",
-  level: 99,
-  mmr: 2000
-};
+// Logging to console + file
+const logsDir = path.join(__dirname, 'logs');
+if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir);
+const accessLogStream = fs.createWriteStream(path.join(logsDir, 'requests.log'), { flags: 'a' });
+app.use(morgan('[:date[iso]] :method :url :status - :response-time ms', { stream: accessLogStream }));
+app.use(morgan('dev'));
 
-// currencies, characters, skins, items
-const currencies = { gold: 999999, cash: 99999 };
-const characters = [
-  { id:"char_tim", name:"Tim", role:"Survivor", level:30, owned:true },
-  { id:"char_belle", name:"Belle", role:"Hunter", level:25, owned:true }
-];
-const skins = [
-  { id:"skin_tim_default", charId:"char_tim", name:"Default", owned:true },
-  { id:"skin_belle_default", charId:"char_belle", name:"Default", owned:true }
-];
-const items = [
-  { id:"item_syringe", name:"Syringe", count:99 },
-  { id:"item_holy", name:"Holy Water", count:99 }
-];
-const products = [
-  { id:"pack_1", name:"Starter Pack", price:0, currency:"cash" }
-];
+// Health endpoints
+app.get('/', (req, res) => res.json({ ok: true, message: 'HSHO mock API running', ts: new Date().toISOString() }));
+app.get('/live/health', (req, res) => res.json({ error: 0, success: true, message: 'healthy' }));
+app.get('/live/ping', (req, res) => res.json({ error: 0, success: true, pong: true }));
 
-// Login endpoints
-app.post(['/live/player/authen','/live/player/auth','/live/auth/login'], (req,res)=>{
-  res.json(ok({ token:"render-token-123", playerId:player.playerId, profile:player }));
+// Example specific endpoints (optional)
+app.post('/live/player/login', (req, res) => {
+  const playerId = (req.body && (req.body.playerId || req.body.player_id)) || 'mock-player';
+  res.json({
+    error: 0,
+    success: true,
+    data: {
+      playerId,
+      token: 'mock-token-' + Date.now(),
+      profile: { name: 'Mock', level: 1 }
+    }
+  });
 });
 
-// Profile
-app.get('/live/player/profile', (req,res)=> res.json(ok(player)));
-app.get('/live/player/currency', (req,res)=> res.json(ok(currencies)));
-
-// Lists
-app.get(['/live/character/list','/live/character/listAll'], (req,res)=> res.json(okList(characters)));
-app.get(['/live/skin/list','/live/skin/listAll'], (req,res)=> res.json(okList(skins)));
-app.get(['/live/item/list','/live/item/listAll'], (req,res)=> res.json(okList(items)));
-app.get(['/live/productListing/list','/live/product/list'], (req,res)=> res.json(okList(products)));
-
-// Lobby / Matchmaking
-app.post(['/live/lobby/create','/live/lobby/join','/live/lobby/leave','/live/matchmaking/search','/live/matchmaking/cancel'], (req,res)=>{
-  res.json(ok({ lobbyId:"RENDER_LOBBY_1", members:[player.playerId] }));
+app.get('/live/store/products', (req, res) => {
+  res.json({
+    error: 0,
+    success: true,
+    products: [
+      { id: 'p1', name: 'Starter Pack', price: 0 },
+      { id: 'p2', name: 'Skin Bundle', price: 0 }
+    ]
+  });
 });
 
-// fallback for any /live route
-app.all(/^\/live\/.*/i, (req,res)=> res.json(ok({})));
+// Catch-all for any /live/* path
+app.all('/live/*', (req, res) => {
+  res.json({
+    error: 0,
+    success: true,
+    path: req.path,
+    method: req.method,
+    echo: { query: req.query, body: req.body },
+    message: 'OK',
+    ts: new Date().toISOString()
+  });
+});
 
-// root test
-app.get('/', (req,res)=> res.send('HSHO Render API Running'));
+// 404 for other paths
+app.use((req, res) => {
+  res.status(404).json({ ok: false, message: 'Not Found', path: req.path });
+});
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, ()=> console.log(`API running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`[HSHO] Mock API listening on http://0.0.0.0:${PORT}`);
+});
