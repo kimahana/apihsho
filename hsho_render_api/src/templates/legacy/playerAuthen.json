@@ -1,0 +1,42 @@
+{
+  "error": 0,
+  "code": 0,
+  "result": true,
+  "success": true,
+  "status": "OK",
+  "message": "auth success",
+  "data": {
+    "error": 0,
+    "code": 0,
+    "result": true,
+    "success": true,
+    "status": "OK",
+    "message": "auth success",
+    "playerId": "${playerId}",
+    "uid": "${playerId}",
+    "userId": "${playerId}",
+    "id": "${playerId}",
+    "steamId": "${steamId}",
+    "token": "${token}",
+    "access_token": "${token}",
+    "sessionKey": "${token}",
+    "session_token": "${token}",
+    "expires": "${expires}",
+    "serverTime": "${serverTime}",
+    "baseUrl": "${baseUrl}",
+    "base_url": "${baseUrl}",
+    "api_base": "${baseUrl}",
+    "server_url": "${baseUrl}",
+    "endpoints": {
+      "getPlayer": "/live/player/get",
+      "storeList": "/live/store/list",
+      "lootbox": "/live/lootbox/balance",
+      "ranked": "/live/ranked/info",
+      "mailbox": "/live/mail/get",
+      "announcement": "/live/announcement",
+      "version": "/live/version"
+    },
+    "next": "/live/player/get",
+    "redirect": "/live/player/get"
+  }
+}
