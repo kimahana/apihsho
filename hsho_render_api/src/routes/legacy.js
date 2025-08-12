@@ -4,6 +4,8 @@ import { q } from '../../index.js';
 
 const router = Router();
 
+let lastAuth = { request: null, response: null };
+
 function nowTs() { return Math.floor(Date.now()/1000); }
 function expTs() { return nowTs() + 3600 * 24; } // 24h
 
@@ -19,6 +21,11 @@ function getPlayerId(req) {
       || req.headers['x-player-id']
       || 'demo-player-001';
 }
+
+// Debug: show last auth request/response
+router.get('/__debug/authen', (req, res) => {
+  res.json(lastAuth);
+});
 
 router.post(['/live/player/authen', '/player/authen', '/api/player/authen'], async (req, res) => {
   try {
@@ -37,7 +44,7 @@ router.post(['/live/player/authen', '/player/authen', '/api/player/authen'], asy
       await q(`INSERT INTO lootbox_balances (player_id, balance) VALUES ($1,0) ON CONFLICT (player_id) DO NOTHING`, [playerId]);
       await q(`INSERT INTO ranked_stats (player_id, rank_name, rank_point, mmr)
                VALUES ($1,'Bronze',0,0) ON CONFLICT (player_id) DO NOTHING`, [playerId]);
-    } catch(e) { /* ignore if DB not configured */ }
+    } catch(e) { /* ignore if no DB configured */ }
 
     const baseUrl = 'https://apihshow.onrender.com';
     const endpoints = {
@@ -63,7 +70,9 @@ router.post(['/live/player/authen', '/player/authen', '/api/player/authen'], asy
       next: '/live/player/get', redirect: '/live/player/get'
     };
 
-    return res.json({ ...success, data: { ...success } });
+    const response = { ...success, data: { ...success } };
+    lastAuth = { request: { headers: req.headers, body }, response };
+    return res.json(response);
   } catch (e) {
     console.error(e);
     return res.status(200).json({ error: 1, code: 1, result: false, success: false, status: 'ERROR', message: e.message });
