@@ -1,4 +1,3 @@
--- Core relational tables
 CREATE TABLE IF NOT EXISTS players (
   player_id TEXT PRIMARY KEY,
   display_name TEXT,
@@ -41,13 +40,11 @@ CREATE TABLE IF NOT EXISTS store_products (
   tags TEXT[]
 );
 
--- Generic cache for any /YGG/:name payload
 CREATE TABLE IF NOT EXISTS ygg_api_cache (
   name TEXT PRIMARY KEY,
   payload JSONB NOT NULL
 );
 
--- Logs
 CREATE TABLE IF NOT EXISTS logs (
   id SERIAL PRIMARY KEY,
   type TEXT,

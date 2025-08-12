@@ -1,9 +1,8 @@
 import { Router } from 'express';
-import { q } from '../index.js';
+import { q } from '../../index.js';
 
 const router = Router();
 
-// GET /YGG/GetPlayerAPI?playerId=...
 router.get('/GetPlayerAPI', async (req, res) => {
   const playerId = req.query.playerId || 'demo-player-001';
   try {
@@ -43,7 +42,6 @@ router.get('/GetPlayerAPI', async (req, res) => {
   }
 });
 
-// GET /YGG/GetStoreAPI
 router.get('/GetStoreAPI', async (req, res) => {
   try {
     const rows = (await q(`SELECT short_code, name, price_base, currency, COALESCE(tags,'{}') AS tags FROM store_products ORDER BY short_code`)).rows;
@@ -68,7 +66,6 @@ router.get('/GetStoreAPI', async (req, res) => {
   }
 });
 
-// GET /YGG/GetLootboxAPI?playerId=...
 router.get('/GetLootboxAPI', async (req, res) => {
   const playerId = req.query.playerId || 'demo-player-001';
   try {
@@ -80,7 +77,6 @@ router.get('/GetLootboxAPI', async (req, res) => {
   }
 });
 
-// GET /YGG/GetRankedAPI?playerId=...
 router.get('/GetRankedAPI', async (req, res) => {
   const playerId = req.query.playerId || 'demo-player-001';
   try {
@@ -92,21 +88,16 @@ router.get('/GetRankedAPI', async (req, res) => {
   }
 });
 
-// Mailbox
+router.get('/GetQuestSkinAPI', async (req, res) => res.json({ questSkin: { goals: [] } }));
+router.get('/GetCurseRelicAPI', async (req, res) => res.json({ curseRelic: { relics: [], curses: [] } }));
+router.get('/Announcement', async (req, res) => res.json({ announcements: [] }));
+router.get('/GetServerVersion', async (req, res) => res.json({ version: '1.0.0', message: '' }));
+
 router.get('/MailBoxGet', async (req, res) => res.json({ mails: [] }));
 router.post('/MailBoxRead', async (req, res) => res.json({ ok: true }));
 router.post('/MailBoxClaim', async (req, res) => res.json({ ok: true }));
 router.post('/MailBoxRemove', async (req, res) => res.json({ ok: true }));
 
-// Quest / Curse
-router.get('/GetQuestSkinAPI', async (req, res) => res.json({ questSkin: { goals: [] } }));
-router.get('/GetCurseRelicAPI', async (req, res) => res.json({ curseRelic: { relics: [], curses: [] } }));
-
-// Announcement / Version
-router.get('/Announcement', async (req, res) => res.json({ announcements: [] }));
-router.get('/GetServerVersion', async (req, res) => res.json({ version: '1.0.0', message: '' }));
-
-// Logs
 router.post('/LogReport', async (req, res) => {
   await q(`INSERT INTO logs (type, player_id, payload) VALUES ('report', $1, $2)`, [req.body?.playerId || null, req.body || {}]);
   res.json({ ok: true });
