@@ -3,7 +3,7 @@ import crypto from 'crypto';
 
 const router = Router();
 
-let lastAuth = { request: null, response: null, steam: null };
+let lastAuth = { request: null, response: null };
 
 function nowTs() { return Math.floor(Date.now()/1000); }
 function expTs() { return nowTs() + 3600 * 24; } // 24h
@@ -15,28 +15,15 @@ function getField(obj, keys, fallback) {
   return fallback;
 }
 
-async function verifySteamTicket(ticket) {
-  const key = process.env.STEAM_API_KEY || '';
-  const appid = process.env.STEAM_APPID || '480';
-  if (!key || !ticket) return { ok: false, reason: 'missing_key_or_ticket' };
-  const url = `https://api.steampowered.com/ISteamUserAuth/AuthenticateUserTicket/v1/?key=${encodeURIComponent(key)}&appid=${encodeURIComponent(appid)}&ticket=${encodeURIComponent(ticket)}`;
+function deriveIdsFromTicket(ticket, fallback) {
   try {
-    const r = await fetch(url, { method: 'POST' });
-    const json = await r.json();
-    const resp = json?.response || {};
-    if (resp?.error) return { ok: false, reason: resp.error.errordesc || 'steam_error', raw: json };
-    const sid = resp?.params?.steamid || resp?.params?.steamID || null;
-    const result = (resp?.params?.result || '').toUpperCase();
-    if (sid && result === 'OK') return { ok: true, steamid: String(sid), raw: json };
-    return { ok: false, reason: 'invalid_ticket', raw: json };
-  } catch (e) {
-    return { ok: false, reason: 'network_error', error: String(e) };
-  }
+    const h = crypto.createHash('sha256').update(String(ticket||'')).digest('hex');
+    const pid = 'p_' + h.slice(0,16);
+    return { playerId: pid, steamId: pid, tokenBase: h };
+  } catch { return { playerId: fallback, steamId: fallback, tokenBase: 'ok' }; }
 }
 
-// Debug endpoints
 router.get('/__debug/authen', (req, res) => res.json(lastAuth || {}));
-router.get('/debug/auth', (req, res) => res.json(lastAuth || {}));
 
 router.post(['/live/player/authen', '/player/authen', '/api/player/authen'], async (req, res) => {
   try {
@@ -44,16 +31,10 @@ router.post(['/live/player/authen', '/player/authen', '/api/player/authen'], asy
     const baseUrl = 'https://apihshow.onrender.com';
 
     const ticket = getField(body, ['ticket','authTicket','access_ticket'], '');
-
-    let steam = null;
-    if (process.env.STEAM_API_KEY) {
-      steam = await verifySteamTicket(ticket);
-    }
-
-    const derivedSteamId = steam?.ok ? steam.steamid : null;
-    const playerId = getField(body, ['playerId','uid','userId','id'], derivedSteamId || 'p_' + crypto.createHash('sha256').update(String(ticket)).digest('hex').slice(0,16));
-    const steamId  = getField(body, ['steamId','steam_id'], derivedSteamId || playerId);
-    const token    = crypto.createHash('sha256').update(String(ticket || playerId) + ':' + nowTs()).digest('hex');
+    const derived = deriveIdsFromTicket(ticket, 'demo-player-001');
+    const playerId = getField(body, ['playerId','uid','userId','id'], derived.playerId);
+    const steamId  = getField(body, ['steamId','steam_id'], derived.steamId);
+    const token    = crypto.createHash('sha256').update(derived.tokenBase + ':' + nowTs()).digest('hex');
 
     const endpoints = {
       getPlayer: '/live/player/get',
@@ -68,55 +49,37 @@ router.post(['/live/player/authen', '/player/authen', '/api/player/authen'], asy
       version: '/live/version'
     };
 
-    const user = {
-      id: playerId,
-      uid: playerId,
-      userId: playerId,
-      playerId,
-      steamId,
-      name: `Player_${playerId.slice(-6)}`,
-      token,
-      access_token: token,
-      sessionKey: token,
-      session_token: token,
-      sessionId: token,
-      session_id: token,
-      createdAt: nowTs(),
-      updatedAt: nowTs()
-    };
-
-    const profile = {
-      level: 1,
-      exp: 0,
-      role: 'Survivor',
-      rank: { name: 'Bronze', point: 0, mmr: 0 },
-      balance: { coin: 0, gem: 0 },
-      lootbox: { balance: 0 }
-    };
-
-    const flags = {
-      error: 0, code: 0, err: 0, errno: 0, Error: 0, ErrorCode: 0, rc: 0, ret: 0,
-      error_str: '0', code_str: '0', statusCode: 0, status_code: 0, ResponseCode: 0,
-      result: true, success: true, ok: true, status: 'OK', httpCode: 200, resultCode: 0,
-      message: 'auth success', Message: 'auth success', msg: 'auth success'
-    };
-
-    const server = { api: baseUrl, base: baseUrl, time: nowTs(), region: 'sg' };
-
     const base = {
-      ...flags,
+      // success flags
+      error: 0, code: 0, err: 0, errno: 0, Error: 0, ErrorCode: 0, rc: 0, ret: 0,
+      'error_str': '0', 'code_str': '0', statusCode: 0, status_code: 0, ResponseCode: 0,
+      result: true, success: true, ok: true, status: 'OK', httpCode: 200, resultCode: 0,
+      message: 'auth success', Message: 'auth success', msg: 'auth success',
+      // ids & tokens (many aliases)
       playerId, uid: playerId, userId: playerId, id: playerId, steamId,
-      token, access_token: token, sessionKey: token, session_token: token, sessionId: token, session_id: token,
+      player_id: playerId, steam_id: steamId,
+      token, access_token: token, accessToken: token, 'access-token': token,
+      sessionKey: token, session_token: token, sessionId: token, session_id: token, session: token, sid: token,
       ticket, authType: body.authType || 'steam',
+      // times & server
       expires: expTs(), expiresIn: 86400, serverTime: nowTs(),
       baseUrl, base_url: baseUrl, api_base: baseUrl, server_url: baseUrl, host: baseUrl,
-      server,
-      endpoints, endpoint: endpoints, next: '/live/player/get', redirect: '/live/player/get',
-      user, profile
+      server: { api: baseUrl, base: baseUrl, time: nowTs(), region: 'sg' },
+      // endpoints
+      endpoints, endpoint: endpoints, api: endpoints, next: '/live/player/get', redirect: '/live/player/get',
+      // minimal user object
+      user: { id: playerId, uid: playerId, userId: playerId, playerId, steamId, name: `Player_${playerId.slice(-6)}`, token },
+      profile: { level: 1, exp: 0, role: 'Survivor', rank: { name: 'Bronze', point: 0, mmr: 0 }, balance: { coin: 0, gem: 0 }, lootbox: { balance: 0 } }
     };
 
-    const response = { ...base, data: { ...base } };
-    lastAuth = { request: { headers: req.headers, body }, response, steam };
+    const response = {
+      ...base,
+      data: { ...base },
+      // steam-style wrapper some clients expect
+      response: { params: { result: 'OK', steamid: steamId, playerid: playerId, token }, error: null }
+    };
+
+    lastAuth = { request: { headers: req.headers, body }, response };
     return res.json(response);
   } catch (e) {
     console.error(e);
