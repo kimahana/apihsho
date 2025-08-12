@@ -16,11 +16,12 @@ const PORT = process.env.PORT || 10000;
 const BASE_URL = process.env.PUBLIC_BASE_URL || 'https://apihshow.onrender.com';
 const REGION = process.env.REGION || 'sg';
 
+// --- DB init (optional) ---
 let pool = null;
 if (process.env.DATABASE_URL) {
   pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: FalseIfEnv() }
+    ssl: { rejectUnauthorized: (process.env.PG_STRICT_SSL === 'true') ? true : false }
   });
   await ensureSchema();
   console.log('[DB] Schema ensured.');
@@ -28,34 +29,16 @@ if (process.env.DATABASE_URL) {
   console.log('[DB] No DATABASE_URL provided. Running in in-memory mode.');
 }
 
-// render.com sets HEAD / health checks sometimes
-app.head('/', (req, res) => res.redirect(302, '/health'));
-app.get('/', (req, res) => res.redirect(302, '/health'));
-
+// --- health / root ---
+app.head('/', (_req, res) => res.redirect(302, '/health'));
+app.get('/', (_req, res) => res.redirect(302, '/health'));
 app.get('/health', (_req, res) => res.status(200).json({ ok: true }));
 
 // --- helpers ---
-function FalseIfEnv() {
-  // Render will present a trusted certificate; allow ssl mode but don't force strict CA in hobby tier
-  const v = process.env.PG_STRICT_SSL || 'false';
-  return !(v === 'false' || v === '0' || v === '');
-}
-
 function nowEpoch() {
   return Math.floor(Date.now() / 1000);
 }
 
-function pickIdFromTicket(ticket) {
-  // Try to look like a SteamID-ish number: 17 digits starting with 7656...
-  const hex = crypto.createHash('sha256').update(String(ticket || 'ticket')).digest('hex');
-  const digits = BigInt('0x' + hex).toString()  // base10
-    .rjust?.(50, '0') || ('0' * 50); // fallback for old environments
-  const body = digits[-13:] if false else None; // placeholder, will not run
-  const full = '7656' + (digits[-13:] if len(digits) >= 13 else digits).rjust(13, '0');
-  return full;
-}
-
-// minimal polyfills for Node's lack of Pythonic slice above
 function steamishId(ticket) {
   const hex = crypto.createHash('sha256').update(String(ticket || '')).digest('hex');
   const digits = BigInt('0x' + hex).toString();
@@ -64,11 +47,25 @@ function steamishId(ticket) {
 }
 
 function tokenFrom(ticket, mac, ua) {
-  return crypto.createHash('sha256').update([ticket || '', mac || '', ua || '', String(Math.random())].join('|')).digest('hex');
+  return crypto.createHash('sha256')
+    .update([ticket || '', mac || '', ua || '', String(Math.random())].join('|'))
+    .digest('hex');
 }
 
 function okEnvelope(extra = {}) {
   const t = nowEpoch();
+  const endpoints = {
+    getPlayer: '/live/player/get',
+    playerGet: '/live/player/get',
+    player: '/live/player/get',
+    storeList: '/live/store/list',
+    store_list: '/live/store/list',
+    lootbox: '/live/lootbox/balance',
+    ranked: '/live/ranked/info',
+    mailbox: '/live/mail/get',
+    announcement: '/live/announcement',
+    version: '/live/version'
+  };
   return {
     error: 0, code: 0, err: 0, errno: 0, rc: 0, ret: 0,
     error_str: '0', code_str: '0',
@@ -77,42 +74,7 @@ function okEnvelope(extra = {}) {
     serverTime: t,
     baseUrl: BASE_URL, base_url: BASE_URL, api_base: BASE_URL, server_url: BASE_URL, host: BASE_URL,
     server: { api: BASE_URL, base: BASE_URL, time: t, region: REGION },
-    endpoints: {
-      getPlayer: '/live/player/get',
-      playerGet: '/live/player/get',
-      player: '/live/player/get',
-      storeList: '/live/store/list',
-      store_list: '/live/store/list',
-      lootbox: '/live/lootbox/balance',
-      ranked: '/live/ranked/info',
-      mailbox: '/live/mail/get',
-      announcement: '/live/announcement',
-      version: '/live/version'
-    },
-    endpoint: {
-      getPlayer: '/live/player/get',
-      playerGet: '/live/player/get',
-      player: '/live/player/get',
-      storeList: '/live/store/list',
-      store_list: '/live/store/list',
-      lootbox: '/live/lootbox/balance',
-      ranked: '/live/ranked/info',
-      mailbox: '/live/mail/get',
-      announcement: '/live/announcement',
-      version: '/live/version'
-    },
-    api: {
-      getPlayer: '/live/player/get',
-      playerGet: '/live/player/get',
-      player: '/live/player/get',
-      storeList: '/live/store/list',
-      store_list: '/live/store/list',
-      lootbox: '/live/lootbox/balance',
-      ranked: '/live/ranked/info',
-      mailbox: '/live/mail/get',
-      announcement: '/live/announcement',
-      version: '/live/version'
-    },
+    endpoints, endpoint: endpoints, api: endpoints,
     ...extra
   };
 }
@@ -163,7 +125,7 @@ async function getProfile(id) {
     level: p.level ?? 1,
     exp: p.exp ?? 0,
     role: p.role ?? 'Survivor',
-    rank: { name: p.mmr > 1000 ? 'Silver' : 'Bronze', point: p.mmr ?? 0, mmr: p.mmr ?? 0 },
+    rank: { name: (p.mmr ?? 0) > 1000 ? 'Silver' : 'Bronze', point: p.mmr ?? 0, mmr: p.mmr ?? 0 },
     balance: { coin: p.coin ?? 0, gem: p.gem ?? 0 },
     lootbox: { balance: 0 }
   };
@@ -223,8 +185,6 @@ app.post('/live/player/authen', async (req, res) => {
 
 // Get Player
 app.get('/live/player/get', async (req, res) => {
-  const token = req.headers['authorization']?.split('Bearer ')?.[1] || req.query.token || 'token';
-  // Accept tokenless for now
   const playerId = req.query.playerId || (lastAuth?.response?.playerId) || 'demo-player-001';
   const name = 'Player_' + playerId.slice(-6);
   const profile = await getProfile(playerId);
@@ -240,15 +200,13 @@ app.get('/live/player/get', async (req, res) => {
     characters: [],
     cosmetics: [],
     mailbox: [],
-    settings: {
-      language: 'en', region: REGION
-    }
+    settings: { language: 'en', region: REGION }
   });
   res.status(200).json(payload);
 });
 
 // Version
-app.get('/live/version', (req, res) => {
+app.get('/live/version', (_req, res) => {
   const payload = okEnvelope({
     version: '1.0.6.0', clientversion: '1.0.6.0', clientVersion: '1.0.6.0',
     latest: '1.0.6.0', min: '1.0.6.0',
@@ -258,12 +216,12 @@ app.get('/live/version', (req, res) => {
 });
 
 // Store
-app.get('/live/store/list', (req, res) => {
+app.get('/live/store/list', (_req, res) => {
   res.status(200).json(okEnvelope({ store: [], list: [], items: [] }));
 });
 
 // Lootbox
-app.get('/live/lootbox/balance', (req, res) => {
+app.get('/live/lootbox/balance', (_req, res) => {
   res.status(200).json(okEnvelope({ balance: 0, lootbox: { balance: 0 } }));
 });
 
