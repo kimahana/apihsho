@@ -1,64 +1,83 @@
+import express from 'express';
+import cors from 'cors';
+import morgan from 'morgan';
+import dotenv from 'dotenv';
+import { Pool } from 'pg';
+import fs from 'fs';
+import path from 'path';
+import url from 'url';
 
-const express = require('express');
+dotenv.config();
+
+const __filename = url.fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(express.json());
+app.use(cors());
+app.use(express.json({ limit: '2mb' }));
+app.use(morgan('dev'));
 
-function ok(data){ return {success:true,status:"success",code:0,data}; }
-function okList(list){ return ok({list}); }
+const PORT = process.env.PORT || 10000;
 
-// fake player data
-const player = { 
-  playerId: "RENDER_PLAYER_001",
-  username: "RenderUser",
-  displayName: "Render Player",
-  level: 99,
-  mmr: 2000
-};
-
-// currencies, characters, skins, items
-const currencies = { gold: 999999, cash: 99999 };
-const characters = [
-  { id:"char_tim", name:"Tim", role:"Survivor", level:30, owned:true },
-  { id:"char_belle", name:"Belle", role:"Hunter", level:25, owned:true }
-];
-const skins = [
-  { id:"skin_tim_default", charId:"char_tim", name:"Default", owned:true },
-  { id:"skin_belle_default", charId:"char_belle", name:"Default", owned:true }
-];
-const items = [
-  { id:"item_syringe", name:"Syringe", count:99 },
-  { id:"item_holy", name:"Holy Water", count:99 }
-];
-const products = [
-  { id:"pack_1", name:"Starter Pack", price:0, currency:"cash" }
-];
-
-// Login endpoints
-app.post(['/live/player/authen','/live/player/auth','/live/auth/login'], (req,res)=>{
-  res.json(ok({ token:"render-token-123", playerId:player.playerId, profile:player }));
+// Postgres Pool
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
-// Profile
-app.get('/live/player/profile', (req,res)=> res.json(ok(player)));
-app.get('/live/player/currency', (req,res)=> res.json(ok(currencies)));
+export async function q(sql, params = []) {
+  const client = await pool.connect();
+  try {
+    return await client.query(sql, params);
+  } finally {
+    client.release();
+  }
+}
 
-// Lists
-app.get(['/live/character/list','/live/character/listAll'], (req,res)=> res.json(okList(characters)));
-app.get(['/live/skin/list','/live/skin/listAll'], (req,res)=> res.json(okList(skins)));
-app.get(['/live/item/list','/live/item/listAll'], (req,res)=> res.json(okList(items)));
-app.get(['/live/productListing/list','/live/product/list'], (req,res)=> res.json(okList(products)));
+async function autoMigrate() {
+  try {
+    const schemaPath = path.join(__dirname, 'db', 'schema.sql');
+    const seedPath = path.join(__dirname, 'db', 'seed.sql');
+    if (fs.existsSync(schemaPath)) {
+      await q(fs.readFileSync(schemaPath, 'utf8'));
+      console.log('[DB] Schema ensured.');
+    }
+    // seed only when cache is empty
+    const r = await q('SELECT to_regclass($1) AS t', ['ygg_api_cache']);
+    if (r.rows[0].t) {
+      const { rows } = await q('SELECT COUNT(*)::int AS n FROM ygg_api_cache');
+      if (rows[0].n === 0 && fs.existsSync(seedPath)) {
+        await q(fs.readFileSync(seedPath, 'utf8'));
+        console.log('[DB] Seed inserted.');
+      }
+    }
+  } catch (err) {
+    console.warn('[DB] Auto-migrate skipped:', err.message);
+  }
+}
 
-// Lobby / Matchmaking
-app.post(['/live/lobby/create','/live/lobby/join','/live/lobby/leave','/live/matchmaking/search','/live/matchmaking/cancel'], (req,res)=>{
-  res.json(ok({ lobbyId:"RENDER_LOBBY_1", members:[player.playerId] }));
+// Health
+app.get('/health', async (req, res) => {
+  try {
+    await q('SELECT 1');
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(200).json({ ok: true, db: 'not configured' });
+  }
 });
 
-// fallback for any /live route
-app.all(/^\/live\/.*/i, (req,res)=> res.json(ok({})));
+// YGG routes
+import yggCore from './src/routes/ygg_core.js';
+import yggGeneric from './src/routes/ygg_generic.js';
+app.use('/YGG', yggCore);
+app.use('/YGG', yggGeneric);
 
-// root test
-app.get('/', (req,res)=> res.send('HSHO Render API Running'));
+// 404
+app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, ()=> console.log(`API running on port ${PORT}`));
+autoMigrate().then(() => {
+  app.listen(PORT, () => console.log(`Server listening on :${PORT}`));
+}).catch(err => {
+  console.error('Start failed:', err);
+  process.exit(1);
+});
