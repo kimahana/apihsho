@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import crypto from 'crypto';
-import { q } from '../../index.js';
 
 const router = Router();
 
@@ -22,10 +21,9 @@ function getPlayerId(req) {
       || 'demo-player-001';
 }
 
-// Debug: show last auth request/response
-router.get('/__debug/authen', (req, res) => {
-  res.json(lastAuth);
-});
+// Robust debug endpoints
+router.get('/__debug/authen', (req, res) => res.json(lastAuth || {}));
+router.get('/debug/auth', (req, res) => res.json(lastAuth || {}));
 
 router.post(['/live/player/authen', '/player/authen', '/api/player/authen'], async (req, res) => {
   try {
@@ -35,16 +33,6 @@ router.post(['/live/player/authen', '/player/authen', '/api/player/authen'], asy
     const ticket   = getField(body, ['ticket','authTicket','access_ticket'], '');
     const tokenRaw = ticket || (playerId + ':' + nowTs());
     const token    = crypto.createHash('sha256').update(tokenRaw).digest('hex');
-
-    try {
-      await q(`INSERT INTO players (player_id, display_name, role, level, exp)
-               VALUES ($1, $2, 'Survivor', 1, 0) ON CONFLICT (player_id) DO NOTHING`,
-               [playerId, `Player_${playerId.slice(0,6)}`]);
-      await q(`INSERT INTO balances (player_id, coin, gem) VALUES ($1,0,0) ON CONFLICT (player_id) DO NOTHING`, [playerId]);
-      await q(`INSERT INTO lootbox_balances (player_id, balance) VALUES ($1,0) ON CONFLICT (player_id) DO NOTHING`, [playerId]);
-      await q(`INSERT INTO ranked_stats (player_id, rank_name, rank_point, mmr)
-               VALUES ($1,'Bronze',0,0) ON CONFLICT (player_id) DO NOTHING`, [playerId]);
-    } catch(e) { /* ignore if no DB configured */ }
 
     const baseUrl = 'https://apihshow.onrender.com';
     const endpoints = {
@@ -57,20 +45,29 @@ router.post(['/live/player/authen', '/player/authen', '/api/player/authen'], asy
       version: '/live/version'
     };
 
-    const success = {
+    const top = {
+      // success flags (numeric + string)
       error: 0, code: 0, err: 0, Error: 0, ErrorCode: 0,
-      result: true, success: true, status: 'OK', message: 'auth success', Message: 'auth success',
+      'error_str': '0', 'code_str': '0',
+      result: true, success: true, status: 'OK', httpCode: 200,
+      message: 'auth success', Message: 'auth success', msg: 'auth success',
+      // ids
       playerId, uid: playerId, userId: playerId, id: playerId, steamId,
+      // tokens
       token, access_token: token, sessionKey: token, session_token: token, sessionId: token, session_id: token,
       ticket, authType: body.authType || 'steam',
+      // times
       expires: expTs(), expiresIn: 86400, serverTime: nowTs(),
+      // server hints
       baseUrl, base_url: baseUrl, api_base: baseUrl, server_url: baseUrl,
       server: { api: baseUrl, base: baseUrl, time: nowTs(), region: 'sg' },
       endpoints,
-      next: '/live/player/get', redirect: '/live/player/get'
+      next: '/live/player/get', redirect: '/live/player/get',
+      // echo original body for compatibility
+      echo: body
     };
 
-    const response = { ...success, data: { ...success } };
+    const response = { ...top, data: { ...top } };
     lastAuth = { request: { headers: req.headers, body }, response };
     return res.json(response);
   } catch (e) {
@@ -79,6 +76,7 @@ router.post(['/live/player/authen', '/player/authen', '/api/player/authen'], asy
   }
 });
 
+// Map old player/get to new API (GET or POST)
 const mapToPlayerAPI = (req, res, next) => {
   req.url = `/YGG/GetPlayerAPI${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`;
   return next();
