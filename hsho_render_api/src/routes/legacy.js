@@ -10,6 +10,50 @@ function getPlayerId(req) {
   return req.query.playerId || req.body?.playerId || req.body?.steamId || req.headers['x-player-id'] || 'demo-player-001';
 }
 
+function authPayload(playerId) {
+  const token = 'ok';
+  const baseUrl = 'https://apihshow.onrender.com';
+  const endpoints = {
+    getPlayer: '/live/player/get',
+    storeList: '/live/store/list',
+    lootbox: '/live/lootbox/balance',
+    ranked: '/live/ranked/info',
+    mailbox: '/live/mail/get',
+    announcement: '/live/announcement',
+    version: '/live/version'
+  };
+  // ultra-compatible payload with many aliases
+  return {
+    // common top-level
+    error: 0,
+    code: 0,
+    result: true,
+    ok: true,
+    success: true,
+    status: 'OK',
+    message: 'auth success',
+    Message: 'auth success',
+    // identities
+    playerId, uid: playerId, userId: playerId, id: playerId,
+    token, access_token: token, sessionKey: token, session_token: token,
+    expires: expTs(), serverTime: nowTs(),
+    // urls
+    baseUrl, base_url: baseUrl, api_base: baseUrl, server_url: baseUrl,
+    endpoints,
+    // nested data copy
+    data: {
+      error: 0, code: 0, result: true, ok: true, success: true, status: 'OK',
+      message: 'auth success', Message: 'auth success',
+      playerId, uid: playerId, userId: playerId, id: playerId,
+      token, access_token: token, sessionKey: token, session_token: token,
+      expires: expTs(), serverTime: nowTs(),
+      baseUrl, base_url: baseUrl, api_base: baseUrl, server_url: baseUrl,
+      endpoints
+    }
+  };
+}
+
+// --- Legacy auth: POST /live/player/authen (and aliases) ---
 router.post(['/live/player/authen', '/player/authen', '/api/player/authen'], async (req, res) => {
   try {
     const playerId = getPlayerId(req);
@@ -22,54 +66,14 @@ router.post(['/live/player/authen', '/player/authen', '/api/player/authen'], asy
       await q(`INSERT INTO ranked_stats (player_id, rank_name, rank_point, mmr)
                VALUES ($1,'Bronze',0,0) ON CONFLICT (player_id) DO NOTHING`, [playerId]);
     } catch(e) { /* ignore if DB not configured */ }
-
-    const token = 'ok';
-    const baseUrl = 'https://apihshow.onrender.com';
-    const endpoints = {
-      getPlayer: '/live/player/get',
-      storeList: '/live/store/list',
-      lootbox: '/live/lootbox/balance',
-      ranked: '/live/ranked/info',
-      mailbox: '/live/mail/get',
-      announcement: '/live/announcement',
-      version: '/live/version'
-    };
-
-    // top-level + nested "data" for compatibility
-    return res.json({
-      error: 0,
-      message: 'auth success',
-      playerId,
-      uid: playerId,
-      token,
-      access_token: token,
-      sessionKey: token,
-      session_token: token,
-      expires: expTs(),
-      serverTime: nowTs(),
-      baseUrl,
-      endpoints,
-      data: {
-        error: 0,
-        message: 'auth success',
-        playerId,
-        uid: playerId,
-        token,
-        access_token: token,
-        sessionKey: token,
-        session_token: token,
-        expires: expTs(),
-        serverTime: nowTs(),
-        baseUrl,
-        endpoints
-      }
-    });
+    return res.json(authPayload(playerId));
   } catch (e) {
     console.error(e);
-    return res.status(200).json({ error: 1, message: e.message });
+    return res.status(200).json({ error: 1, code: 1, result: false, message: e.message });
   }
 });
 
+// --- Player info: support GET/POST for old clients ---
 const mapToPlayerAPI = (req, res, next) => {
   req.url = `/YGG/GetPlayerAPI${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`;
   return next();
