@@ -1,6 +1,6 @@
 {
   "name": "hsho_render_api",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "type": "module",
   "private": true,
   "engines": {
@@ -10,9 +10,7 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "cors": "^2.8.5",
     "express": "^4.19.2",
-    "morgan": "^1.10.0",
     "pg": "^8.11.5"
   }
 }
