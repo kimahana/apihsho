@@ -10,7 +10,6 @@ const TOKENS = [
   'LogReport','LogTransaction','LogStore','LogGetPlayerData'
 ];
 
-// logapi mapping table
 const LOG_MAP = [
   { re: /\/logapi\/v\d+\/add/i, ygg: '/YGG/LogReport' },
   { re: /\/logapi\/v\d+\/report/i, ygg: '/YGG/LogReport' },
@@ -21,7 +20,6 @@ const LOG_MAP = [
 router.use((req, res, next) => {
   const path = req.path || '/';
 
-  // logapi paths
   for (const m of LOG_MAP) {
     if (m.re.test(path)) {
       const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
@@ -30,7 +28,6 @@ router.use((req, res, next) => {
     }
   }
 
-  // generic tokens at end of path
   const m = path.match(new RegExp(`(?:^|/)(${TOKENS.join('|')})$`));
   if (m) {
     const token = m[1];
