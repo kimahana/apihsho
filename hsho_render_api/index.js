@@ -19,7 +19,6 @@ app.use(morgan('dev'));
 
 const PORT = process.env.PORT || 10000;
 
-// Postgres Pool
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
@@ -55,21 +54,17 @@ async function autoMigrate() {
   }
 }
 
-// Health + root redirect
 app.get('/health', (req, res) => res.json({ ok: true }));
 app.get('/', (req, res) => res.redirect('/health'));
 
-// Mount alias BEFORE YGG routers
 import alias from './src/routes/alias.js';
 app.use(alias);
 
-// YGG routes
 import yggCore from './src/routes/ygg_core.js';
 import yggGeneric from './src/routes/ygg_generic.js';
 app.use('/YGG', yggCore);
 app.use('/YGG', yggGeneric);
 
-// 404
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
 autoMigrate().then(() => {

@@ -2,7 +2,6 @@ import { Router } from 'express';
 
 const router = Router();
 
-// Known tokens we want to catch anywhere in the path
 const TOKENS = [
   'GetPlayerAPI','GetStoreAPI','GetLootboxAPI','GetRankedAPI',
   'GetQuestSkinAPI','GetCurseRelicAPI',
@@ -11,7 +10,26 @@ const TOKENS = [
   'LogReport','LogTransaction','LogStore','LogGetPlayerData'
 ];
 
-// Middleware: if the path ends with one of the tokens, rewrite to /YGG/<token>
+// 1) logapi compatibility
+router.use((req, res, next) => {
+  const p = req.path || '/';
+  const m = p.match(/^\/?logapi\/v1\/(check|add|report)\/(\w+)/i);
+  if (m) {
+    const action = m[1].toLowerCase();
+    const subject = m[2].toLowerCase();
+    // Map common subjects to known YGG log endpoints
+    let target = '/YGG/LogReport';
+    if (subject.includes('store')) target = '/YGG/LogStore';
+    else if (subject.includes('transaction')) target = '/YGG/LogTransaction';
+    else if (subject.includes('gacha')) target = '/YGG/LogStore';
+    else if (subject.includes('match') || subject.includes('ingame') || subject.includes('penalty') || subject.includes('errorlog')) target = '/YGG/LogReport';
+    req.url = target + (req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '');
+    return next();
+  }
+  next();
+});
+
+// 2) any path ending with a known token -> /YGG/<token>
 router.use((req, res, next) => {
   const path = req.path || '/';
   const m = path.match(new RegExp(`(?:^|/)(${TOKENS.join('|')})$`));
@@ -19,7 +37,6 @@ router.use((req, res, next) => {
     const token = m[1];
     const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
     req.url = `/YGG/${token}${qs}`;
-    // console.log('[alias]', path, '->', req.url);
   }
   next();
 });
