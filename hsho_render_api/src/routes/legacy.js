@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import crypto from 'crypto';
-import fetch from 'node-fetch';
 
 const router = Router();
 
@@ -24,7 +23,6 @@ async function verifySteamTicket(ticket) {
   try {
     const r = await fetch(url, { method: 'POST' });
     const json = await r.json();
-    // Expected: { response: { params: { result: "OK", steamid: "..." } } } or { response: { error: { errordesc: "..." } } }
     const resp = json?.response || {};
     if (resp?.error) return { ok: false, reason: resp.error.errordesc || 'steam_error', raw: json };
     const sid = resp?.params?.steamid || resp?.params?.steamID || null;
@@ -47,7 +45,6 @@ router.post(['/live/player/authen', '/player/authen', '/api/player/authen'], asy
 
     const ticket = getField(body, ['ticket','authTicket','access_ticket'], '');
 
-    // Try Steam verify if env key exists; otherwise skip
     let steam = null;
     if (process.env.STEAM_API_KEY) {
       steam = await verifySteamTicket(ticket);
