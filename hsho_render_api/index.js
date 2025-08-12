@@ -42,7 +42,6 @@ async function autoMigrate() {
       await q(fs.readFileSync(schemaPath, 'utf8'));
       console.log('[DB] Schema ensured.');
     }
-    // seed only when cache is empty
     const r = await q('SELECT to_regclass($1) AS t', ['ygg_api_cache']);
     if (r.rows[0].t) {
       const { rows } = await q('SELECT COUNT(*)::int AS n FROM ygg_api_cache');
@@ -56,15 +55,13 @@ async function autoMigrate() {
   }
 }
 
-// Health
-app.get('/health', async (req, res) => {
-  try {
-    await q('SELECT 1');
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(200).json({ ok: true, db: 'not configured' });
-  }
-});
+// Health + root redirect
+app.get('/health', (req, res) => res.json({ ok: true }));
+app.get('/', (req, res) => res.redirect('/health'));
+
+// Mount alias BEFORE YGG routers
+import alias from './src/routes/alias.js';
+app.use(alias);
 
 // YGG routes
 import yggCore from './src/routes/ygg_core.js';
