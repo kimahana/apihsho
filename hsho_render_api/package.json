@@ -1,15 +1,14 @@
 {
-  "name": "ygg-full-api",
-  "version": "1.0.0",
-  "description": "Full coverage /YGG/... API with PostgreSQL-backed cache seeded from live JSON + placeholders.",
-  "main": "src/index.js",
+  "name": "hsho_render_api",
+  "version": "2.0.0",
+  "private": true,
   "type": "module",
-  "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
-  },
   "engines": {
     "node": ">=18"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
